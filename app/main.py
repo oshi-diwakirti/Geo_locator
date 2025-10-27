@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from .utils.logger import logger
 from .utils.cache import geo_cache
 from .services.geo_services import get_public_ip, get_coordinates_from_ip, reverse_geocode
-from .config.config import LOCATION_UPDATE_INTERVAL
+from .config.config import LOCATION_UPDATE_INTERVAL, RATE_LIMIT
 
 # Load .env
 load_dotenv()
@@ -118,7 +118,7 @@ async def secure_data():
 
 
 @app.get("/my-location/")
-@limiter.limit("5/minute")
+@limiter.limit(RATE_LIMIT)
 async def my_location(request: Request , user=Depends(azure_auth_dependency)):
     """Return current geolocation — requires Azure AD Bearer Token"""
     return JSONResponse(content=latest_location)

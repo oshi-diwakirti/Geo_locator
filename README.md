@@ -107,6 +107,26 @@ Run all tests:
 pytest -v --disable-warnings
 ```
 
+### Local Testing (Bypass Azure AD Authentication)
+
+During **local testing**, you may disable Azure AD token validation temporarily in `main.py` to test API responses without real tokens.
+
+Example:
+```python
+# For production (with Azure AD)
+@limiter.limit(RATE_LIMIT)
+async def my_location(request: Request, user=Depends(azure_auth_dependency)):
+    return JSONResponse(content=latest_location)
+
+# For local testing (without Azure AD)
+@limiter.limit(RATE_LIMIT)
+async def my_location(request: Request):  # Auth disabled for local testing
+    return JSONResponse(content=latest_location)
+```
+
+**Important:** This should only be used in local or development environments.  
+Do **not** commit or deploy with authentication removed.
+
 ---
 
 
