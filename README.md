@@ -22,7 +22,7 @@ Before you begin, make sure you have the following accounts, tools, and resource
    ```
 
 ### Accounts & Cloud Resources
-- **Azure subscription** — required to create ACR, App Service, Key Vault, and Application Insights. Create one at https://portal.azure.com/.
+- **Azure subscription** — required to create ACR, AKS and Key Vault. Create one at https://portal.azure.com/.
 - **Google Cloud project** — enable **Geocoding API** and create an API Key: https://console.cloud.google.com/.
 
 ### CLI / Local Tools (install and verify)
