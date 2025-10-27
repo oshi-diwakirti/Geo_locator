@@ -13,7 +13,7 @@ Before you begin, make sure you have the following accounts, tools, and resource
 ## Google Maps API Setup
 
 1. Visit [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a new project → enable **Geocoding API** and **Maps JavaScript API**.
+2. Create a new project → enable **Geocoding API**.
 3. Create an API key under **APIs & Services → Credentials**.
 4. Restrict key usage to IPs or domains (security best practice).
 5. Add key to `.env` as:
@@ -74,19 +74,27 @@ APP_SERVICE_NAME=<your-app-service-name>
 geo-locator/
 ├── app/
 │   ├── main.py
-│   ├── services.py
-│   ├── auth.py
-│   └── utils/
-├── tests/
+│   ├── services/
+│   │   └── geo_services.py
+│   ├── config/
+│   │   └── config.py
+│   ├── auth.py/
+│   │   └── azure_auth.py
+│   ├── utils/
+│   │    ├── cache.py
+│   │    └── logger.py
+│   ├── tests/
 │   ├── test_main.py
 │   └── test_auth.py
 ├── requirements.txt
+├── logs/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .dockerignore
 ├── .env
 ├── LICENSE
-└── README.md
+├── README.md
+└── run.py
 ```
 
 ### Install dependencies (local)
@@ -106,6 +114,26 @@ Run all tests:
 ```bash
 pytest -v --disable-warnings
 ```
+
+### Local Testing (Bypass Azure AD Authentication)
+
+During **local testing**, you may disable Azure AD token validation temporarily in `main.py` to test API responses without real tokens.
+
+Example:
+```python
+# For production (with Azure AD)
+@limiter.limit(RATE_LIMIT)
+async def my_location(request: Request, user=Depends(azure_auth_dependency)):
+    return JSONResponse(content=latest_location)
+
+# For local testing (without Azure AD)
+@limiter.limit(RATE_LIMIT)
+async def my_location(request: Request):  # Auth disabled for local testing
+    return JSONResponse(content=latest_location)
+```
+
+**Important:** This should only be used in local or development environments.  
+Do **not** commit or deploy with authentication removed.
 
 ---
 
@@ -147,83 +175,116 @@ docker push ${ACR_NAME}.azurecr.io/geo-locator:1.0.0
 
 ---
 
-## 🚀 Deploy to Azure App Service (Web App for Containers)
+## Deploy to Azure Kubernetes Service (AKS)
 
-### 1) Create App Service Plan (Linux) & Web App
+### Create AKS Cluster and Attach ACR
 ```bash
-# create App Service plan (Linux)
-az appservice plan create --name $APP_SERVICE_PLAN --resource-group $RESOURCE_GROUP --is-linux --sku S1
-
-# create web app for containers
-az webapp create --resource-group $RESOURCE_GROUP --plan $APP_SERVICE_PLAN --name $APP_SERVICE_NAME --deployment-container-image-name ${ACR_NAME}.azurecr.io/geo-locator-api:1.0.0
+az group create --name $RESOURCE_GROUP --location eastus
+az aks create --resource-group $RESOURCE_GROUP --name geo-locator-aks --node-count 2 --enable-managed-identity --generate-ssh-keys
+az aks update -n geo-locator-aks -g $RESOURCE_GROUP --attach-acr $ACR_NAME
+az aks get-credentials --resource-group $RESOURCE_GROUP --name geo-locator-aks
 ```
 
-### 2) Configure ACR access
-Grant the web app access to ACR via a managed identity or service principal. Simplest approach for quick setup (not recommended for prod long-term) — enable admin user on ACR and set credentials in App Settings.
-
-Better approach: use a managed identity and grant `AcrPull` role.
-
-Example (managed identity approach):
+### Deploy Secrets using Azure Key Vault
 ```bash
-# assign managed identity to web app
-az webapp identity assign -g $RESOURCE_GROUP -n $APP_SERVICE_NAME
+az keyvault create --name geoLocatorKeyVault --resource-group $RESOURCE_GROUP --location eastus
 
-# get principal id
-PRINCIPAL_ID=$(az webapp show -g $RESOURCE_GROUP -n $APP_SERVICE_NAME --query identity.principalId -o tsv)
+az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-TENANT-ID" --value "<tenant-id>"
+az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-ID" --value "<client-id>"
+az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-MAPS-API-KEY" --value "<maps-key>"
 
-# assign AcrPull role to the managed identity
-az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $(az acr show -n $ACR_NAME -g $RESOURCE_GROUP --query id -o tsv)
+az aks enable-addons --addons azure-keyvault-secrets-provider --name geo-locator-aks --resource-group $RESOURCE_GROUP
+
+PRINCIPAL_ID=$(az aks show -g $RESOURCE_GROUP -n geo-locator-aks --query identityProfile.kubeletidentity.clientId -o tsv)
+az keyvault set-policy -n geoLocatorKeyVault --secret-permissions get --spn $PRINCIPAL_ID
 ```
-
-### 3) Configure App Settings (environment vars & Key Vault references)
-Set environment variables (from `.env`) in App Settings:
-```bash
-az webapp config appsettings set -g $RESOURCE_GROUP -n $APP_SERVICE_NAME --settings   AZURE_TENANT_ID=$AZURE_TENANT_ID   AZURE_CLIENT_ID=$AZURE_CLIENT_ID   AZURE_EXPOSED_API_AUDIENCE=$AZURE_EXPOSED_API_AUDIENCE   GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
-```
-
-For secrets, use Key Vault integration or reference Key Vault secrets in App Service.
 
 ---
 
-## Blue-Green Deployment (Slot-Based)
+### Kubernetes Deployment Files
 
-1. Create a **staging slot** for zero-downtime deployment:
-   ```bash
-   az webapp deployment slot create -g <RESOURCE_GROUP> -n geo-locator --slot staging
-   ```
-2. Deploy the new container image to the `staging` slot:
-   ```bash
-   az webapp config container set -g <RESOURCE_GROUP> -n geo-locator --slot staging      --docker-custom-image-name <ACR_NAME>.azurecr.io/geo-locator:<tag>
-   ```
-3. Run health checks and validation on staging slot.
-4. Perform **slot swap** after approval:
-   ```bash
-   az webapp deployment slot swap -g <RESOURCE_GROUP> -n geo-locator      --slot staging --target-slot production
-   ```
-5. Rollback by swapping back to the previous slot if issues occur.
+#### `deployment.yaml`
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo-locator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: geo-locator
+  template:
+    metadata:
+      labels:
+        app: geo-locator
+    spec:
+      containers:
+        - name: geo-locator
+          image: <ACR_NAME>.azurecr.io/geo-locator-api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AZURE_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: geo-locator-secrets
+                  key: AZURE-TENANT-ID
+            - name: GOOGLE_MAPS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: geo-locator-secrets
+                  key: GOOGLE-MAPS-API-KEY
+---
+apiVersion: v1
+kind: SecretProviderClass
+metadata:
+  name: azure-keyvault-secrets
+spec:
+  provider: azure
+  parameters:
+    keyvaultName: geoLocatorKeyVault
+    usePodIdentity: "false"
+    useVMManagedIdentity: "true"
+    userAssignedIdentityID: <MANAGED_IDENTITY_CLIENT_ID>
+    tenantId: <AZURE_TENANT_ID>
+    objects: |
+      array:
+        - |
+          objectName: AZURE-TENANT-ID
+          objectType: secret
+        - |
+          objectName: AZURE-CLIENT-ID
+          objectType: secret
+        - |
+          objectName: GOOGLE-MAPS-API-KEY
+          objectType: secret
+```
+
+#### `service.yaml`
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: geo-locator-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: geo-locator
+  ports:
+    - port: 80
+      targetPort: 8000
+```
 
 ---
 
-## Monitoring & Observability
 
-1. Enable **Application Insights** for App Service:
-   ```bash
-   az monitor app-insights component create --app geo-locator-insights --location eastus -g <RESOURCE_GROUP>
-   az webapp config appsettings set -g <RESOURCE_GROUP> -n geo-locator      --settings APPINSIGHTS_INSTRUMENTATIONKEY=<INSIGHTS_KEY>
-   ```
-2. Configure Azure Monitor for alerts on metrics like:
-   - High error rates (5xx)
-   - High response time
-   - CPU/memory thresholds
-3. Integrate with Teams, PagerDuty, or email using **Action Groups**.
+## 🧩 Azure DevOps CI/CD Pipeline (ACR → AKS)
 
----
-
-## 🧩 Azure DevOps CI/CD Pipeline (App Service)
-
-### Service connections required
-- **Azure Resource Manager** (for deploying to App Service)
-- **Docker Registry (ACR)** (for build & push permissions)
+### Required Service Connections
+- **Docker Registry (ACR)** – for build & push
+- **Azure Resource Manager** – to access AKS cluster
+- **Kubernetes Service Connection** – for deployment
 
 ### Example Azure DevOps pipeline (`azure-pipelines.yml`)
 ```yaml
@@ -233,8 +294,8 @@ trigger:
       - main
 
 variables:
-  imageName: 'geo-locator-api'
   acrName: '<ACR_NAME>'
+  imageName: 'geo-locator-api'
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -242,9 +303,8 @@ pool:
 steps:
 - checkout: self
 
-# Build and push image to ACR
 - task: Docker@2
-  displayName: Build and push image
+  displayName: Build and Push Docker Image
   inputs:
     command: buildAndPush
     containerRegistry: '<ACR_SERVICE_CONNECTION>'
@@ -253,29 +313,16 @@ steps:
     tags: |
       $(Build.BuildId)
 
-# Deploy to staging slot (green)
-- task: AzureWebApp@1
-  displayName: Deploy to staging slot
+- task: KubernetesManifest@1
+  displayName: Deploy to AKS
   inputs:
-    azureSubscription: '<AZURE_SERVICE_CONNECTION>'
-    appName: '<APP_SERVICE_NAME>'
-    deployToSlotOrASE: true
-    resourceGroupName: '<RESOURCE_GROUP>'
-    slotName: 'staging'
-    imageName: '$(acrName).azurecr.io/$(imageName):$(Build.BuildId)'
-
-# Optional: Manual approval gate before swapping to production
-
-# Swap staging to production
-- task: AzureCLI@2
-  displayName: Swap slots to production
-  inputs:
-    azureSubscription: '<AZURE_SERVICE_CONNECTION>'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      az webapp deployment slot swap -g <RESOURCE_GROUP> -n <APP_SERVICE_NAME> --slot staging --target-slot production
+    action: deploy
+    kubernetesServiceConnection: '<AKS_SERVICE_CONNECTION>'
+    manifests: 'k8s/deployment.yaml'
+    containers: |
+      $(acrName).azurecr.io/$(imageName):$(Build.BuildId)
 ```
+
 ---
 
 ## Azure DevOps Project Setup
