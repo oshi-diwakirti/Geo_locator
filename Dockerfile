@@ -41,5 +41,11 @@ ENV ENV=PROD \
 # Expose FastAPI port
 EXPOSE 8000
 
-# Run with uvicorn (no reload in prod)
-CMD ["python", "run.py"]
+# Run with uvicorn (For Dev)
+# CMD ["python", "run.py"]
+
+# Dockerfile (for PRD)
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+CMD ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+

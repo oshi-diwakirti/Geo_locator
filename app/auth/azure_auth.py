@@ -5,7 +5,7 @@ from jose import jwt, jwk
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from msal import ConfidentialClientApplication
-from .logger import logger
+from ..utils.logger import logger
 
 # Config from env
 TENANT_ID = os.getenv("AZURE_TENANT_ID")

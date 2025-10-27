@@ -1,8 +1,9 @@
 import time
+from ..config.config import LOCATION_UPDATE_INTERVAL
 
 # Simple TTL cache
 class TTLCache:
-    def __init__(self, ttl_seconds=300):
+    def __init__(self, ttl_seconds=LOCATION_UPDATE_INTERVAL):
         self.ttl = ttl_seconds
         self.store = {}
 
@@ -21,4 +22,4 @@ class TTLCache:
         self.store[key] = (data, time.time())
 
 # Instantiate shared cache
-geo_cache = TTLCache(ttl_seconds=300)
+geo_cache = TTLCache(ttl_seconds=LOCATION_UPDATE_INTERVAL)
