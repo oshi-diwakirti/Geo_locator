@@ -194,7 +194,7 @@ az keyvault create --name geoLocatorKeyVault --resource-group $RESOURCE_GROUP --
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-TENANT-ID" --value "<tenant-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-ID" --value "<client-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-MAPS-API-KEY" --value "<maps-key>"
-az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-CLIENT-SECRET" --value "<client-secret>"
+az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-SECRET" --value "<client-secret>"
 
 az aks enable-addons --addons azure-keyvault-secrets-provider --name geo-locator-aks --resource-group $RESOURCE_GROUP
 
@@ -261,6 +261,12 @@ spec:
           objectType: secret
         - |
           objectName: GOOGLE-MAPS-API-KEY
+          objectType: secret
+        - |
+          objectName: AZURE-EXPOSED-API-AUDIENCE
+          objectType: secret
+        - |
+          objectName: AZURE-CLIENT-SECRET
           objectType: secret
 ```
 
@@ -335,7 +341,7 @@ steps:
 2. Create or import Git repository and push your source code.
 
 ### Service Connections
-1. Create **Azure Resource Manager** service connection (App Service access).  
+1. Create **Azure Resource Manager** service connection (AKS access).  
 2. Create **Docker Registry** service connection (for ACR).
 
 ### Variable Groups
