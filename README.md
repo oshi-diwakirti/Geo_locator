@@ -21,9 +21,11 @@ Before you begin, make sure you have the following accounts, tools, and resource
    GOOGLE_MAPS_API_KEY=<your_api_key>
    ```
 
+
 ### Accounts & Cloud Resources
-- **Azure subscription** — required to create ACR, App Service, Key Vault, and Application Insights. Create one at https://portal.azure.com/.
+- **Azure subscription** — required to create ACR, AKS and Key Vault. Create one at https://portal.azure.com/.
 - **Google Cloud project** — enable **Geocoding API** and create an API Key: https://console.cloud.google.com/.
+
 
 ### CLI / Local Tools (install and verify)
 - **Docker** (Docker Desktop) — `docker --version`. https://www.docker.com/products/docker-desktop/
@@ -34,7 +36,7 @@ Before you begin, make sure you have the following accounts, tools, and resource
 
 ### Accounts & Service Principals
 - **Azure AD user** with rights to create resources (or ask cloud admin).
-- **Service Principal** for CI/CD to push images to ACR and manage App Service deployments.
+- **Service Principal** for CI/CD to push images to ACR.
 
 Example: create a service principal with ACR push permission (replace placeholders):
 ```bash
@@ -54,16 +56,16 @@ AZURE_EXPOSED_API_AUDIENCE=<your-api-audience>
 GOOGLE_MAPS_API_KEY=<your-google-api-key>
 ACR_NAME=<your-acr-name>
 RESOURCE_GROUP=<your-resource-group>
-APP_SERVICE_PLAN=<your-app-service-plan>
 APP_SERVICE_NAME=<your-app-service-name>
 ```
+Same keys we need to update in Azure Key Vault(`AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `GOOGLE_MAPS_API_KEY`, `AZURE_EXPOSED_API_AUDIENCE`,)
+
 
 ### Recommended Azure resources to create (high level)
 - **Resource Group**
 - **Azure Container Registry (ACR)**
-- **App Service Plan** (Linux) and **Web App for Containers**
+- **AKS**
 - **Azure Key Vault** for secrets
-- **Application Insights / Log Analytics Workspace** for monitoring
 
 ---
 
@@ -192,6 +194,7 @@ az keyvault create --name geoLocatorKeyVault --resource-group $RESOURCE_GROUP --
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-TENANT-ID" --value "<tenant-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-ID" --value "<client-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-MAPS-API-KEY" --value "<maps-key>"
+az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-CLIENT-SECRET" --value "<client-secret>"
 
 az aks enable-addons --addons azure-keyvault-secrets-provider --name geo-locator-aks --resource-group $RESOURCE_GROUP
 
@@ -336,12 +339,12 @@ steps:
 2. Create **Docker Registry** service connection (for ACR).
 
 ### Variable Groups
-- Store secrets and environment variables (`AZURE_CLIENT_SECRET`, `GOOGLE_MAPS_API_KEY`) securely.
-- Optionally link to **Azure Key Vault**.
+- Store secrets and environment variables (`AZURE_TENANT_ID`, `ACR_NAME`) securely.
+- Link to **Azure Key Vault**.
 
 ### Pipelines
 - **Build (CI)**: Lint, test, build, and push Docker image to ACR.
-- **Release (CD)**: Deploy image to staging slot → run smoke tests → approve → swap slots.
+- **Release (CD)**: Deploy image to staging.
 
 ### Approvals & Policies
 - Add manual approval for production in **Environments**.
@@ -357,7 +360,6 @@ steps:
 1. Developer merges PR → CI builds & pushes new image to ACR.
 2. CD pipeline deploys to **staging slot** → health checks run.
 3. Approval required → swap staging to production.
-4. Monitoring alerts team on issues → rollback if needed.
 
 ---
 
