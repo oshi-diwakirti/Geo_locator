@@ -21,9 +21,11 @@ Before you begin, make sure you have the following accounts, tools, and resource
    GOOGLE_MAPS_API_KEY=<your_api_key>
    ```
 
+
 ### Accounts & Cloud Resources
 - **Azure subscription** — required to create ACR, AKS and Key Vault. Create one at https://portal.azure.com/.
 - **Google Cloud project** — enable **Geocoding API** and create an API Key: https://console.cloud.google.com/.
+
 
 ### CLI / Local Tools (install and verify)
 - **Docker** (Docker Desktop) — `docker --version`. https://www.docker.com/products/docker-desktop/
