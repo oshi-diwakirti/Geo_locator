@@ -262,6 +262,12 @@ spec:
         - |
           objectName: GOOGLE-MAPS-API-KEY
           objectType: secret
+        - |
+          objectName: AZURE-EXPOSED-API-AUDIENCE
+          objectType: secret
+        - |
+          objectName: AZURE-CLIENT-SECRET
+          objectType: secret
 ```
 
 #### `service.yaml`
@@ -335,7 +341,7 @@ steps:
 2. Create or import Git repository and push your source code.
 
 ### Service Connections
-1. Create **Azure Resource Manager** service connection (App Service access).  
+1. Create **Azure Resource Manager** service connection (AKS access).  
 2. Create **Docker Registry** service connection (for ACR).
 
 ### Variable Groups
