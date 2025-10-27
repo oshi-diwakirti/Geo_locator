@@ -77,14 +77,16 @@ geo-locator/
 │   ├── services.py
 │   ├── auth.py
 │   └── utils/
+├── tests/
+│   ├── test_main.py
+│   └── test_auth.py
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .dockerignore
+├── .env
 ├── LICENSE
-├── README.md
-└── run.py
-
+└── README.md
 ```
 
 ### Install dependencies (local)
@@ -94,6 +96,19 @@ source venv/bin/activate       # Windows: venv\Scripts\activate
 pip install --upgrade pip
 pip install -r requirements.txt    # download dependencies
 ```
+
+
+## Running Tests
+
+Unit tests use **pytest** and **httpx.AsyncClient**.
+
+Run all tests:
+```bash
+pytest -v --disable-warnings
+```
+
+---
+
 
 ## Dockerization (Production Image Build)
 
@@ -132,22 +147,41 @@ docker push ${ACR_NAME}.azurecr.io/geo-locator:1.0.0
 
 ---
 
+## 🚀 Deploy to Azure App Service (Web App for Containers)
 
-## Azure App Service — Container Deployment
+### 1) Create App Service Plan (Linux) & Web App
+```bash
+# create App Service plan (Linux)
+az appservice plan create --name $APP_SERVICE_PLAN --resource-group $RESOURCE_GROUP --is-linux --sku S1
 
-1. Create App Service Plan:
-   ```bash
-   az appservice plan create -n geo-plan -g <RESOURCE_GROUP> --is-linux --sku B1
-   ```
-2. Create App Service (Docker-based):
-   ```bash
-   az webapp create -g <RESOURCE_GROUP> -p geo-plan -n geo-locator      --deployment-container-image-name <ACR_NAME>.azurecr.io/geo-locator:latest
-   ```
-3. Configure ACR authentication:
-   ```bash
-   az webapp config container set -n geo-locator -g <RESOURCE_GROUP>      --docker-custom-image-name <ACR_NAME>.azurecr.io/geo-locator:latest      --docker-registry-server-url https://<ACR_NAME>.azurecr.io
-   ```
-4. Set environment variables securely via Key Vault or App Settings.
+# create web app for containers
+az webapp create --resource-group $RESOURCE_GROUP --plan $APP_SERVICE_PLAN --name $APP_SERVICE_NAME --deployment-container-image-name ${ACR_NAME}.azurecr.io/geo-locator-api:1.0.0
+```
+
+### 2) Configure ACR access
+Grant the web app access to ACR via a managed identity or service principal. Simplest approach for quick setup (not recommended for prod long-term) — enable admin user on ACR and set credentials in App Settings.
+
+Better approach: use a managed identity and grant `AcrPull` role.
+
+Example (managed identity approach):
+```bash
+# assign managed identity to web app
+az webapp identity assign -g $RESOURCE_GROUP -n $APP_SERVICE_NAME
+
+# get principal id
+PRINCIPAL_ID=$(az webapp show -g $RESOURCE_GROUP -n $APP_SERVICE_NAME --query identity.principalId -o tsv)
+
+# assign AcrPull role to the managed identity
+az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $(az acr show -n $ACR_NAME -g $RESOURCE_GROUP --query id -o tsv)
+```
+
+### 3) Configure App Settings (environment vars & Key Vault references)
+Set environment variables (from `.env`) in App Settings:
+```bash
+az webapp config appsettings set -g $RESOURCE_GROUP -n $APP_SERVICE_NAME --settings   AZURE_TENANT_ID=$AZURE_TENANT_ID   AZURE_CLIENT_ID=$AZURE_CLIENT_ID   AZURE_EXPOSED_API_AUDIENCE=$AZURE_EXPOSED_API_AUDIENCE   GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
+```
+
+For secrets, use Key Vault integration or reference Key Vault secrets in App Service.
 
 ---
 
@@ -183,6 +217,65 @@ docker push ${ACR_NAME}.azurecr.io/geo-locator:1.0.0
    - CPU/memory thresholds
 3. Integrate with Teams, PagerDuty, or email using **Action Groups**.
 
+---
+
+## 🧩 Azure DevOps CI/CD Pipeline (App Service)
+
+### Service connections required
+- **Azure Resource Manager** (for deploying to App Service)
+- **Docker Registry (ACR)** (for build & push permissions)
+
+### Example Azure DevOps pipeline (`azure-pipelines.yml`)
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  imageName: 'geo-locator-api'
+  acrName: '<ACR_NAME>'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- checkout: self
+
+# Build and push image to ACR
+- task: Docker@2
+  displayName: Build and push image
+  inputs:
+    command: buildAndPush
+    containerRegistry: '<ACR_SERVICE_CONNECTION>'
+    repository: '$(acrName)/$(imageName)'
+    dockerfile: 'Dockerfile'
+    tags: |
+      $(Build.BuildId)
+
+# Deploy to staging slot (green)
+- task: AzureWebApp@1
+  displayName: Deploy to staging slot
+  inputs:
+    azureSubscription: '<AZURE_SERVICE_CONNECTION>'
+    appName: '<APP_SERVICE_NAME>'
+    deployToSlotOrASE: true
+    resourceGroupName: '<RESOURCE_GROUP>'
+    slotName: 'staging'
+    imageName: '$(acrName).azurecr.io/$(imageName):$(Build.BuildId)'
+
+# Optional: Manual approval gate before swapping to production
+
+# Swap staging to production
+- task: AzureCLI@2
+  displayName: Swap slots to production
+  inputs:
+    azureSubscription: '<AZURE_SERVICE_CONNECTION>'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az webapp deployment slot swap -g <RESOURCE_GROUP> -n <APP_SERVICE_NAME> --slot staging --target-slot production
+```
 ---
 
 ## Azure DevOps Project Setup

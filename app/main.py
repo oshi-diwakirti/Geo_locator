@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 
 from .utils.logger import logger
 from .utils.cache import geo_cache
-from .services import get_public_ip, get_coordinates_from_ip, reverse_geocode
+from .services.geo_services import get_public_ip, get_coordinates_from_ip, reverse_geocode
+from .config.config import LOCATION_UPDATE_INTERVAL
 
 # Load .env
 load_dotenv()
@@ -75,7 +76,7 @@ async def azure_auth_dependency(request: Request):
     return payload
 
 # ---------------------------- Background Updater ---------------------------- #
-def update_location(interval=600):
+def update_location(interval=LOCATION_UPDATE_INTERVAL):
     """Background job to periodically update location"""
     global latest_location
     while True:
@@ -110,10 +111,15 @@ threading.Thread(target=update_location, daemon=True).start()
 async def root():
     return RedirectResponse(url="/my-location/")
 
+@app.get("/secure-data", dependencies=[Depends(azure_auth_dependency)])
+async def secure_data():
+    """Protected endpoint for testing auth"""
+    return {"data": "secret"}
+
 
 @app.get("/my-location/")
-@limiter.limit("10/minute")
-async def my_location(request: Request, user=Depends(azure_auth_dependency)):
+@limiter.limit("5/minute")
+async def my_location(request: Request , user=Depends(azure_auth_dependency)):
     """Return current geolocation — requires Azure AD Bearer Token"""
     return JSONResponse(content=latest_location)
 
