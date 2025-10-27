@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  geo-locator-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: geo-locator-api:1.0.0
+    container_name: geo-locator-api
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=PROD
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
