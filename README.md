@@ -194,7 +194,7 @@ az keyvault create --name geoLocatorKeyVault --resource-group $RESOURCE_GROUP --
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-TENANT-ID" --value "<tenant-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-ID" --value "<client-id>"
 az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-MAPS-API-KEY" --value "<maps-key>"
-az keyvault secret set --vault-name geoLocatorKeyVault --name "GOOGLE-CLIENT-SECRET" --value "<client-secret>"
+az keyvault secret set --vault-name geoLocatorKeyVault --name "AZURE-CLIENT-SECRET" --value "<client-secret>"
 
 az aks enable-addons --addons azure-keyvault-secrets-provider --name geo-locator-aks --resource-group $RESOURCE_GROUP
 
